@@ -176,7 +176,7 @@ void cond_policydb_destroy(struct policydb *p)
 int cond_init_bool_indexes(struct policydb *p)
 {
 	kfree(p->bool_val_to_struct);
-	p->bool_val_to_struct =
+	p->bool_val_to_struct = (struct cond_bool_datum **)
 		kmalloc(p->p_bools.nprim * sizeof(struct cond_bool_datum *), GFP_KERNEL);
 	if (!p->bool_val_to_struct)
 		return -ENOMEM;
@@ -556,7 +556,7 @@ static int cond_write_av_list(struct policydb *p,
 	return 0;
 }
 
-static int cond_write_node(struct policydb *p, struct cond_node *node,
+int cond_write_node(struct policydb *p, struct cond_node *node,
 		    struct policy_file *fp)
 {
 	struct cond_expr *cur_expr;
@@ -619,31 +619,32 @@ int cond_write_list(struct policydb *p, struct cond_node *list, void *fp)
 	return 0;
 }
 
-void cond_compute_operation(struct avtab *ctab, struct avtab_key *key,
-		struct operation_decision *od)
+void cond_compute_xperms(struct avtab *ctab, struct avtab_key *key,
+		struct extended_perms_decision *xpermd)
 {
 	struct avtab_node *node;
 
-	if (!ctab || !key || !od)
+	if (!ctab || !key || !xpermd)
 		return;
 
 	for (node = avtab_search_node(ctab, key); node;
 			node = avtab_search_node_next(node, key->specified)) {
 		if (node->key.specified & AVTAB_ENABLED)
-			services_compute_operation_num(od, node);
+			services_compute_xperms_decision(xpermd, node);
 	}
 	return;
 
 }
+
 /* Determine whether additional permissions are granted by the conditional
  * av table, and if so, add them to the result
  */
 void cond_compute_av(struct avtab *ctab, struct avtab_key *key,
-		struct av_decision *avd, struct operation *ops)
+		struct av_decision *avd, struct extended_perms *xperms)
 {
 	struct avtab_node *node;
 
-	if (!ctab || !key || !avd || !ops)
+	if (!ctab || !key || !avd)
 		return;
 
 	for (node = avtab_search_node(ctab, key); node;
@@ -662,9 +663,9 @@ void cond_compute_av(struct avtab *ctab, struct avtab_key *key,
 		if ((u16)(AVTAB_AUDITALLOW|AVTAB_ENABLED) ==
 		    (node->key.specified & (AVTAB_AUDITALLOW|AVTAB_ENABLED)))
 			avd->auditallow |= node->datum.u.data;
-		if ((node->key.specified & AVTAB_ENABLED) &&
-				(node->key.specified & AVTAB_OP))
-			services_compute_operation_type(ops, node);
+		if (xperms && (node->key.specified & AVTAB_ENABLED) &&
+				(node->key.specified & AVTAB_XPERMS))
+			services_compute_xperms_drivers(xperms, node);
 	}
 	return;
 }

@@ -12,7 +12,6 @@
  * as published by the Free Software Foundation.
  */
 #include <linux/module.h>
-#include <linux/selinux.h>
 
 #include "security.h"
 

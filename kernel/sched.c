@@ -86,6 +86,7 @@
 
 #define CREATE_TRACE_POINTS
 #include <trace/events/sched.h>
+#include <linux/cpufreq.h>
 
 /*
  * Convert user-nice values [ -20 ... 0 ... 19 ]
@@ -3753,6 +3754,11 @@ void account_user_time(struct task_struct *p, cputime_t cputime,
 	cpuacct_update_stats(p, CPUACCT_STAT_USER, cputime);
 	/* Account for user time used */
 	acct_update_integrals(p);
+
+#ifdef CONFIG_CPU_FREQ_STAT
+	/* Account power usage for user time */
+	acct_update_power(p, cputime);
+#endif
 }
 
 /*
@@ -3809,6 +3815,11 @@ void __account_system_time(struct task_struct *p, cputime_t cputime,
 
 	/* Account for system time used */
 	acct_update_integrals(p);
+
+#ifdef CONFIG_CPU_FREQ_STAT
+	/* Account power usage for system time */
+	acct_update_power(p, cputime);
+#endif
 }
 
 /*

@@ -75,6 +75,8 @@ static char policy_opened;
 /* global data for policy capabilities */
 static struct dentry *policycap_dir;
 
+extern void selnl_notify_setenforce(int val);
+
 /* Check whether a task is allowed to use a security operation. */
 static int task_has_security(struct task_struct *tsk,
 			     u32 perms)
@@ -276,6 +278,7 @@ static ssize_t sel_write_disable(struct file *file, const char __user *buf,
 	char *page = NULL;
 	ssize_t length;
 	int new_value;
+	extern int selinux_disable(void);
 
 	length = -ENOMEM;
 	if (count >= PAGE_SIZE)
@@ -344,7 +347,7 @@ static int sel_make_classes(void);
 static int sel_make_policycap(void);
 
 /* declaration for sel_make_class_dirs */
-static struct dentry *sel_make_dir(struct dentry *dir, const char *name,
+static int sel_make_dir(struct inode *dir, struct dentry *dentry,
 			unsigned long *ino);
 
 static ssize_t sel_read_mls(struct file *filp, char __user *buf,
@@ -475,7 +478,7 @@ static struct vm_operations_struct sel_mmap_policy_ops = {
 	.page_mkwrite = sel_mmap_policy_fault,
 };
 
-static int sel_mmap_policy(struct file *filp, struct vm_area_struct *vma)
+int sel_mmap_policy(struct file *filp, struct vm_area_struct *vma)
 {
 	if (vma->vm_flags & VM_SHARED) {
 		/* do not allow mprotect to make mapping writable */
@@ -749,6 +752,14 @@ out:
 	return length;
 }
 
+static inline int hexcode_to_int(int code) {
+	if (code == '\0' || !isxdigit(code))
+		return -1;
+	if (isdigit(code))
+		return code - '0';
+	return tolower(code) - 'a' + 10;
+}
+
 static ssize_t sel_write_create(struct file *file, char *buf, size_t size)
 {
 	char *scon = NULL, *tcon = NULL;
@@ -800,11 +811,9 @@ static ssize_t sel_write_create(struct file *file, char *buf, size_t size)
 			if (c1 == '+')
 				c1 = ' ';
 			else if (c1 == '%') {
-				c1 = hex_to_bin(*r++);
-				if (c1 < 0)
+				if ((c1 = hexcode_to_int(*r++)) < 0)
 					goto out;
-				c2 = hex_to_bin(*r++);
-				if (c2 < 0)
+				if ((c2 = hexcode_to_int(*r++)) < 0)
 					goto out;
 				c1 = (c1 << 4) | c2;
 			}
@@ -1678,9 +1687,13 @@ static int sel_make_class_dir_entries(char *classname, int index,
 	inode->i_ino = sel_class_to_ino(index);
 	d_add(dentry, inode);
 
-	dentry = sel_make_dir(dir, "perms", &last_class_ino);
-	if (IS_ERR(dentry))
-		return PTR_ERR(dentry);
+	dentry = d_alloc_name(dir, "perms");
+	if (!dentry)
+		return -ENOMEM;
+
+	rc = sel_make_dir(dir->d_inode, dentry, &last_class_ino);
+	if (rc)
+		return rc;
 
 	rc = sel_make_perm_files(classname, index, dentry);
 
@@ -1729,12 +1742,15 @@ static int sel_make_classes(void)
 	for (i = 0; i < nclasses; i++) {
 		struct dentry *class_name_dir;
 
-		class_name_dir = sel_make_dir(class_dir, classes[i],
-				&last_class_ino);
-		if (IS_ERR(class_name_dir)) {
-			rc = PTR_ERR(class_name_dir);
+		rc = -ENOMEM;
+		class_name_dir = d_alloc_name(class_dir, classes[i]);
+		if (!class_name_dir)
 			goto out;
-		}
+
+		rc = sel_make_dir(class_dir->d_inode, class_name_dir,
+				&last_class_ino);
+		if (rc)
+			goto out;
 
 		/* i+1 since class values are 1-indexed */
 		rc = sel_make_class_dir_entries(classes[i], i + 1,
@@ -1780,20 +1796,14 @@ static int sel_make_policycap(void)
 	return 0;
 }
 
-static struct dentry *sel_make_dir(struct dentry *dir, const char *name,
+static int sel_make_dir(struct inode *dir, struct dentry *dentry,
 			unsigned long *ino)
 {
-	struct dentry *dentry = d_alloc_name(dir, name);
 	struct inode *inode;
 
-	if (!dentry)
-		return ERR_PTR(-ENOMEM);
-
-	inode = sel_make_inode(dir->d_sb, S_IFDIR | S_IRUGO | S_IXUGO);
-	if (!inode) {
-		dput(dentry);
-		return ERR_PTR(-ENOMEM);
-	}
+	inode = sel_make_inode(dir->i_sb, S_IFDIR | S_IRUGO | S_IXUGO);
+	if (!inode)
+		return -ENOMEM;
 
 	inode->i_op = &simple_dir_inode_operations;
 	inode->i_fop = &simple_dir_operations;
@@ -1802,16 +1812,16 @@ static struct dentry *sel_make_dir(struct dentry *dir, const char *name,
 	inc_nlink(inode);
 	d_add(dentry, inode);
 	/* bump link count on parent directory, too */
-	inc_nlink(dir->d_inode);
+	inc_nlink(dir);
 
-	return dentry;
+	return 0;
 }
 
 static int sel_fill_super(struct super_block *sb, void *data, int silent)
 {
 	int ret;
 	struct dentry *dentry;
-	struct inode *inode;
+	struct inode *inode, *root_inode;
 	struct inode_security_struct *isec;
 
 	static struct tree_descr selinux_files[] = {
@@ -1838,12 +1848,18 @@ static int sel_fill_super(struct super_block *sb, void *data, int silent)
 	if (ret)
 		goto err;
 
-	bool_dir = sel_make_dir(sb->s_root, BOOL_DIR_NAME, &sel_last_ino);
-	if (IS_ERR(bool_dir)) {
-		ret = PTR_ERR(bool_dir);
-		bool_dir = NULL;
+	root_inode = sb->s_root->d_inode;
+
+	ret = -ENOMEM;
+	dentry = d_alloc_name(sb->s_root, BOOL_DIR_NAME);
+	if (!dentry)
 		goto err;
-	}
+
+	ret = sel_make_dir(root_inode, dentry, &sel_last_ino);
+	if (ret)
+		goto err;
+
+	bool_dir = dentry;
 
 	ret = -ENOMEM;
 	dentry = d_alloc_name(sb->s_root, NULL_FILE_NAME);
@@ -1865,39 +1881,54 @@ static int sel_fill_super(struct super_block *sb, void *data, int silent)
 	d_add(dentry, inode);
 	selinux_null = dentry;
 
-	dentry = sel_make_dir(sb->s_root, "avc", &sel_last_ino);
-	if (IS_ERR(dentry)) {
-		ret = PTR_ERR(dentry);
+	ret = -ENOMEM;
+	dentry = d_alloc_name(sb->s_root, "avc");
+	if (!dentry)
 		goto err;
-	}
+
+	ret = sel_make_dir(root_inode, dentry, &sel_last_ino);
+	if (ret)
+		goto err;
 
 	ret = sel_make_avc_files(dentry);
 	if (ret)
 		goto err;
 
-	dentry = sel_make_dir(sb->s_root, "initial_contexts", &sel_last_ino);
-	if (IS_ERR(dentry)) {
-		ret = PTR_ERR(dentry);
+	ret = -ENOMEM;
+	dentry = d_alloc_name(sb->s_root, "initial_contexts");
+	if (!dentry)
 		goto err;
-	}
+
+	ret = sel_make_dir(root_inode, dentry, &sel_last_ino);
+	if (ret)
+		goto err;
 
 	ret = sel_make_initcon_files(dentry);
 	if (ret)
 		goto err;
 
-	class_dir = sel_make_dir(sb->s_root, "class", &sel_last_ino);
-	if (IS_ERR(class_dir)) {
-		ret = PTR_ERR(class_dir);
-		class_dir = NULL;
+	ret = -ENOMEM;
+	dentry = d_alloc_name(sb->s_root, "class");
+	if (!dentry)
 		goto err;
-	}
 
-	policycap_dir = sel_make_dir(sb->s_root, "policy_capabilities", &sel_last_ino);
-	if (IS_ERR(policycap_dir)) {
-		ret = PTR_ERR(policycap_dir);
-		policycap_dir = NULL;
+	ret = sel_make_dir(root_inode, dentry, &sel_last_ino);
+	if (ret)
 		goto err;
-	}
+
+	class_dir = dentry;
+
+	ret = -ENOMEM;
+	dentry = d_alloc_name(sb->s_root, "policy_capabilities");
+	if (!dentry)
+		goto err;
+
+	ret = sel_make_dir(root_inode, dentry, &sel_last_ino);
+	if (ret)
+		goto err;
+
+	policycap_dir = dentry;
+
 	return 0;
 err:
 	printk(KERN_ERR "SELinux: %s:  failed while creating inodes\n",

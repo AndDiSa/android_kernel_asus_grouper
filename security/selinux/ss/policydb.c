@@ -149,7 +149,7 @@ static struct policydb_compat_info policydb_compat[] = {
 		.ocon_num	= OCON_NUM,
 	},
 	{
-		.version	= POLICYDB_VERSION_IOCTL_OPERATIONS,
+		.version	= POLICYDB_VERSION_XPERMS_IOCTL,
 		.sym_num	= SYM_NUM,
 		.ocon_num	= OCON_NUM,
 	},
@@ -1829,6 +1829,8 @@ static int policydb_bounds_sanity_check(struct policydb *p)
 	return 0;
 }
 
+extern int ss_initialized;
+
 u16 string_to_security_class(struct policydb *p, const char *name)
 {
 	struct class_datum *cladatum;
@@ -2779,6 +2781,24 @@ static int perm_write(void *vkey, void *datum, void *fp)
 	return 0;
 }
 
+static int type_set_write(struct type_set *t, void *fp)
+{
+	int rc;
+	__le32 buf[1];
+
+	if (ebitmap_write(&t->types, fp))
+		return -EINVAL;
+	if (ebitmap_write(&t->negset, fp))
+		return -EINVAL;
+
+	buf[0] = cpu_to_le32(t->flags);
+	rc = put_entry(buf, sizeof(u32), 1, fp);
+	if (rc)
+		return -EINVAL;
+
+	return 0;
+}
+
 static int common_write(void *vkey, void *datum, void *ptr)
 {
 	char *key = vkey;
@@ -2805,24 +2825,6 @@ static int common_write(void *vkey, void *datum, void *ptr)
 	rc = hashtab_map(comdatum->permissions.table, perm_write, fp);
 	if (rc)
 		return rc;
-
-	return 0;
-}
-
-static int type_set_write(struct type_set *t, void *fp)
-{
-	int rc;
-	__le32 buf[1];
-
-	if (ebitmap_write(&t->types, fp))
-		return -EINVAL;
-	if (ebitmap_write(&t->negset, fp))
-		return -EINVAL;
-
-	buf[0] = cpu_to_le32(t->flags);
-	rc = put_entry(buf, sizeof(u32), 1, fp);
-	if (rc)
-		return -EINVAL;
 
 	return 0;
 }

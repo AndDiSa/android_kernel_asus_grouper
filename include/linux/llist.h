@@ -118,9 +118,45 @@ static inline int llist_empty(const struct llist_head *head)
 	return ACCESS_ONCE(head->first) == NULL;
 }
 
-void llist_add(struct llist_node *new, struct llist_head *head);
+/** @daniel, from CM
+ * llist_add - add a new entry
+ * @new:	new entry to be added
+ * @head:	the head for your lock-less list
+ *
+ * @daniel, to void	//Return whether list is empty before adding.
+ */
+static inline void llist_add(struct llist_node *new, struct llist_head *head)
+{
+	struct llist_node *entry, *old_entry;
+
+	entry = head->first;
+	for (;;) {
+		old_entry = entry;
+		new->next = entry;
+		entry = cmpxchg(&head->first, old_entry, new);
+		if (entry == old_entry)
+			break;
+	}
+
+	//@daniel,return old_entry == NULL;
+}
+
+/** @daniel, from CM
+ * llist_del_all - delete all entries from lock-less list
+ * @head:	the head of lock-less list to delete all entries
+ *
+ * If list is empty, return NULL, otherwise, delete all entries and
+ * return the pointer to the first entry.  The order of entries
+ * deleted is from the newest to the oldest added one.
+ */
+static inline struct llist_node *llist_del_all(struct llist_head *head)
+{
+	return xchg(&head->first, NULL);
+}
+
+//void llist_add(struct llist_node *new, struct llist_head *head);
 void llist_add_batch(struct llist_node *new_first, struct llist_node *new_last,
 		     struct llist_head *head);
 struct llist_node *llist_del_first(struct llist_head *head);
-struct llist_node *llist_del_all(struct llist_head *head);
+//struct llist_node *llist_del_all(struct llist_head *head);
 #endif /* LLIST_H */
