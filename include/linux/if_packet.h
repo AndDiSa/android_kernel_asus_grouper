@@ -173,7 +173,7 @@ struct hdr_v1 {
 	 *    you can see which blk[s] is[are] outstanding etc.
 	 * 3. Validate kernel code.
 	 */
-	aligned_u64	seq_num;
+	__aligned_u64	seq_num;
 
 	/*
 	 * ts_last_pkt:

@@ -33,6 +33,8 @@
 #include <linux/of_gpio.h>
 #include <linux/spinlock.h>
 
+extern void dt2wake_setdev(struct input_dev * input_device);
+
 struct gpio_button_data {
 	const struct gpio_keys_button *button;
 	struct input_dev *input;
@@ -747,6 +749,9 @@ static int __devinit gpio_keys_probe(struct platform_device *pdev)
 			gpio_keys_gpio_report_event(bdata);
 	}
 	input_sync(input);
+
+	dt2wake_setdev(input);
+	printk(KERN_INFO "[dt2wake]: set device %s\n", input->name);
 
 	device_init_wakeup(&pdev->dev, wakeup);
 
