@@ -729,7 +729,8 @@ static int udp_send_skb(struct sk_buff *skb, struct flowi4 *fl4)
 
 	if (is_udplite)  				 /*     UDP-Lite      */
 		csum = udplite_csum(skb);
-	else if (sk->sk_no_check && !skb_is_gso(skb)) {   /* UDP csum off */
+
+	else if (sk->sk_no_check && !skb_has_frag_list(skb)) {   /* UDP csum off */
 		skb->ip_summed = CHECKSUM_NONE;
 		goto send;
 
