@@ -113,7 +113,7 @@ int nilfs_get_block(struct inode *inode, sector_t blkoff,
 				       "offset=%llu)\n",
 				       inode->i_ino,
 				       (unsigned long long)blkoff);
-				err = 0;
+				err = -EAGAIN;
 			}
 			nilfs_transaction_abort(inode->i_sb);
 			goto out;
