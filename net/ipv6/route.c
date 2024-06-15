@@ -383,7 +383,7 @@ static void rt6_probe(struct rt6_info *rt)
 	 */
 	rcu_read_lock();
 	neigh = rt ? dst_get_neighbour(&rt->dst) : NULL;
-	if (!neigh || (neigh->nud_state & NUD_VALID))
+	if (!neigh || (neigh->nud_state & NUD_VALID) || !rt->rt6i_idev)
 		goto out;
 	read_lock_bh(&neigh->lock);
 	if (!(neigh->nud_state & NUD_VALID) &&
