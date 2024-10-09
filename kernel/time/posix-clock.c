@@ -348,6 +348,11 @@ static int pc_clock_settime(clockid_t id, const struct timespec *ts)
 		goto out;
 	}
 
+	if (!timespec_valid(ts)) {
+		err = -EINVAL;
+		goto out;
+	}
+
 	if (cd.clk->ops.clock_settime)
 		err = cd.clk->ops.clock_settime(cd.clk, ts);
 	else
