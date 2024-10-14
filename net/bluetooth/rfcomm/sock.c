@@ -289,18 +289,18 @@ static struct sock *rfcomm_sock_alloc(struct net *net, struct socket *sock, int 
 	struct rfcomm_dlc *d;
 	struct sock *sk;
 
-	sk = sk_alloc(net, PF_BLUETOOTH, prio, &rfcomm_proto);
-	if (!sk)
+	d = rfcomm_dlc_alloc(prio);
+	if (!d)
 		return NULL;
+
+	sk = sk_alloc(net, PF_BLUETOOTH, prio, &rfcomm_proto);
+	if (!sk) {
+		rfcomm_dlc_free(d);
+		return NULL;
+	}
 
 	sock_init_data(sock, sk);
 	INIT_LIST_HEAD(&bt_sk(sk)->accept_q);
-
-	d = rfcomm_dlc_alloc(prio);
-	if (!d) {
-		sk_free(sk);
-		return NULL;
-	}
 
 	d->data_ready   = rfcomm_sk_data_ready;
 	d->state_change = rfcomm_sk_state_change;
