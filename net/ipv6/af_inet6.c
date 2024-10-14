@@ -260,6 +260,7 @@ lookup_protocol:
 		err = sk->sk_prot->init(sk);
 		if (err) {
 			sk_common_release(sk);
+			sock->sk = NULL;
 			goto out;
 		}
 	}
