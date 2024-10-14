@@ -414,8 +414,10 @@ lookup_protocol:
 
 	if (sk->sk_prot->init) {
 		err = sk->sk_prot->init(sk);
-		if (err)
+		if (err) {
 			sk_common_release(sk);
+			sock->sk = NULL;
+		}
 	}
 out:
 	return err;
