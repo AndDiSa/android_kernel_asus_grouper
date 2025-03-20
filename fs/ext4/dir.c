@@ -84,6 +84,10 @@ int __ext4_check_dir_entry(const char *function, unsigned int line,
 	else if (unlikely(((char *) de - bh->b_data) + rlen >
 			  dir->i_sb->s_blocksize))
 		error_msg = "directory entry across blocks";
+	else if (unlikely(((char *) de - bh->b_data) + rlen ==
+			  dir->i_sb->s_blocksize && de->name_len == 1 &&
+			  de->name[0] == '.'))
+		error_msg = "'.' directory cannot be the last in data block";
 	else if (unlikely(le32_to_cpu(de->inode) >
 			le32_to_cpu(EXT4_SB(dir->i_sb)->s_es->s_inodes_count)))
 		error_msg = "inode out of bounds";
