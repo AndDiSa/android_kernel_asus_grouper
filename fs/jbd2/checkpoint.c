@@ -440,6 +440,7 @@ restart:
 		}
 
 		if (retry) {
+			cond_resched();
 			spin_lock(&journal->j_list_lock);
 			goto restart;
 		}
