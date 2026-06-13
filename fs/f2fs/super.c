@@ -793,6 +793,8 @@ static int sanity_check_raw_super(struct super_block *sb,
 			struct f2fs_super_block *raw_super)
 {
 	unsigned int blocksize;
+        unsigned int total_sections;
+        unsigned int secs_per_zone;
 
 	if (F2FS_SUPER_MAGIC != le32_to_cpu(raw_super->magic)) {
 		f2fs_msg(sb, KERN_INFO,
@@ -859,6 +861,17 @@ static int sanity_check_raw_super(struct super_block *sb,
 		return 1;
 	}
 
+        /* --- BEGIN MANUAL BACKPORT CVE-2018-13100 --- */
+        total_sections = le32_to_cpu(raw_super->section_count);
+        secs_per_zone = le32_to_cpu(raw_super->secs_per_zone);
+
+        if (secs_per_zone > total_sections || !secs_per_zone) {
+                f2fs_msg(sb, KERN_INFO,
+                        "Wrong secs_per_zone / total_sections (%u, %u)",
+                        secs_per_zone, total_sections);
+                return 1;
+        }
+        /* --- END MANUAL BACKPORT --- */
 	return 0;
 }
 
