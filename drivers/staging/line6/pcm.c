@@ -454,6 +454,12 @@ int line6_init_pcm(struct usb_line6 *line6,
 	line6pcm->max_packet_size = usb_maxpacket(line6->usbdev,
 						  usb_rcvintpipe(line6->usbdev,
 								 ep_read), 0);
+	if (!line6pcm->max_packet_size) {
+		dev_err(line6pcm->line6->ifcdev,
+			"cannot get proper max packet size\n");
+		return -EINVAL;
+	}
+
 	line6pcm->properties = properties;
 	line6->line6pcm = line6pcm;
 
