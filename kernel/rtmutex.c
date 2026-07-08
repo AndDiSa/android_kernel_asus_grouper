@@ -980,55 +980,58 @@ static void wakeup_next_waiter(struct rt_mutex *lock)
  * have just failed to try_to_take_rt_mutex().
  */
 static void remove_waiter(struct rt_mutex *lock,
-			  struct rt_mutex_waiter *waiter)
+                          struct rt_mutex_waiter *waiter)
 {
-	bool is_top_waiter = (waiter == rt_mutex_top_waiter(lock));
-	struct task_struct *owner = rt_mutex_owner(lock);
-	struct rt_mutex *next_lock;
-	unsigned long flags;
+       bool is_top_waiter = (waiter == rt_mutex_top_waiter(lock));
+       struct task_struct *owner = rt_mutex_owner(lock);
+       struct task_struct *task = waiter->task;  /* Added for GhostLock fix */
+       struct rt_mutex *next_lock;
+       unsigned long flags;
 
-	raw_spin_lock_irqsave(&current->pi_lock, flags);
-	rt_mutex_dequeue(lock, waiter);
-	current->pi_blocked_on = NULL;
-	raw_spin_unlock_irqrestore(&current->pi_lock, flags);
+       /* Operate on the waiter's task, NOT the currently executing thread */
+       raw_spin_lock_irqsave(&task->pi_lock, flags);
+       rt_mutex_dequeue(lock, waiter);
+       task->pi_blocked_on = NULL;
+       raw_spin_unlock_irqrestore(&task->pi_lock, flags);
 
-	/*
-	 * Only update priority if the waiter was the highest priority
-	 * waiter of the lock and there is an owner to update.
-	 */
-	if (!owner || !is_top_waiter)
-		return;
+       /*
+        * Only update priority if the waiter was the highest priority
+        * waiter of the lock and there is an owner to update.
+        */
+       if (!owner || !is_top_waiter)
+               return;
 
-	raw_spin_lock_irqsave(&owner->pi_lock, flags);
+       raw_spin_lock_irqsave(&owner->pi_lock, flags);
 
-	rt_mutex_dequeue_pi(owner, waiter);
+       rt_mutex_dequeue_pi(owner, waiter);
 
-	if (rt_mutex_has_waiters(lock))
-		rt_mutex_enqueue_pi(owner, rt_mutex_top_waiter(lock));
+       if (rt_mutex_has_waiters(lock))
+               rt_mutex_enqueue_pi(owner, rt_mutex_top_waiter(lock));
 
-	__rt_mutex_adjust_prio(owner);
+       __rt_mutex_adjust_prio(owner);
 
-	/* Store the lock on which owner is blocked or NULL */
-	next_lock = task_blocked_on_lock(owner);
+       /* Store the lock on which owner is blocked or NULL */
+       next_lock = task_blocked_on_lock(owner);
 
-	raw_spin_unlock_irqrestore(&owner->pi_lock, flags);
+       raw_spin_unlock_irqrestore(&owner->pi_lock, flags);
 
-	/*
-	 * Don't walk the chain, if the owner task is not blocked
-	 * itself.
-	 */
-	if (!next_lock)
-		return;
+       /*
+        * Don't walk the chain, if the owner task is not blocked
+        * itself.
+        */
+       if (!next_lock)
+               return;
 
-	/* gets dropped in rt_mutex_adjust_prio_chain()! */
-	get_task_struct(owner);
+       /* gets dropped in rt_mutex_adjust_prio_chain()! */
+       get_task_struct(owner);
 
-	raw_spin_unlock(&lock->wait_lock);
+       raw_spin_unlock(&lock->wait_lock);
 
-	rt_mutex_adjust_prio_chain(owner, RT_MUTEX_MIN_CHAINWALK, lock,
-				   next_lock, NULL, current);
+       /* Pass the specific task to the priority chain, not current */
+       rt_mutex_adjust_prio_chain(owner, RT_MUTEX_MIN_CHAINWALK, lock,
+                                  next_lock, NULL, task);
 
-	raw_spin_lock(&lock->wait_lock);
+       raw_spin_lock(&lock->wait_lock);
 }
 
 /*
