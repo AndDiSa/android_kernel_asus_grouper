@@ -1213,6 +1213,18 @@ static inline unsigned char *skb_pull_inline(struct sk_buff *skb, unsigned int l
 	return unlikely(len > skb->len) ? NULL : __skb_pull(skb, len);
 }
 
+static inline void *skb_pull_data(struct sk_buff *skb, size_t len)
+{
+	void *data = skb->data;
+
+	if (skb->len < len)
+		return NULL;
+
+	skb_pull(skb, len);
+
+	return data;
+}
+
 extern unsigned char *__pskb_pull_tail(struct sk_buff *skb, int delta);
 
 static inline unsigned char *__pskb_pull(struct sk_buff *skb, unsigned int len)
@@ -1923,6 +1935,15 @@ static inline void *skb_header_pointer(const struct sk_buff *skb, int offset,
 		return NULL;
 
 	return buffer;
+}
+
+static inline void *skb_header_pointer_careful(const struct sk_buff *skb,
+					       int offset, int len,
+					       void *buffer)
+{
+	if (unlikely(offset < 0 && -offset > skb_headroom(skb)))
+		return NULL;
+	return skb_header_pointer(skb, offset, len, buffer);
 }
 
 static inline void skb_copy_from_linear_data(const struct sk_buff *skb,
