@@ -2800,7 +2800,10 @@ static inline int l2cap_information_req(struct l2cap_conn *conn, struct l2cap_cm
 static inline int l2cap_information_rsp(struct l2cap_conn *conn, struct l2cap_cmd_hdr *cmd, u8 *data)
 {
 	struct l2cap_info_rsp *rsp = (struct l2cap_info_rsp *) data;
-	u16 type, result;
+	u16 type, result, cmd_len = le16_to_cpu(cmd->len);
+
+	if (cmd_len < sizeof(*rsp))
+		return -EINVAL;
 
 	type   = __le16_to_cpu(rsp->type);
 	result = __le16_to_cpu(rsp->result);
