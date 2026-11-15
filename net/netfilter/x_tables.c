@@ -24,6 +24,7 @@
 #include <linux/mm.h>
 #include <linux/slab.h>
 #include <linux/audit.h>
+#include <linux/ratelimit.h>
 #include <net/net_namespace.h>
 
 #include <linux/netfilter/x_tables.h>
