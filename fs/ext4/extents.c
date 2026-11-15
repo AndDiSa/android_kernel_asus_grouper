@@ -1491,7 +1491,7 @@ static int ext4_ext_correct_indexes(handle_t *handle, struct inode *inode,
 				 "path[%d].p_idx %p > EXT_LAST_INDEX %p",
 				 k, path[k].p_idx,
 				 EXT_LAST_INDEX(path[k].p_hdr));
-		return -EFSCORRUPTED;
+		return -EIO;
 	}
 	path[k].p_idx->ei_block = border;
 	err = ext4_ext_dirty(handle, inode, path + k);
@@ -1510,7 +1510,7 @@ static int ext4_ext_correct_indexes(handle_t *handle, struct inode *inode,
 					 "path[%d].p_idx %p > EXT_LAST_INDEX %p",
 					 k, path[k].p_idx,
 					 EXT_LAST_INDEX(path[k].p_hdr));
-			err = -EFSCORRUPTED;
+			err = -EIO;
 			break;
 		}
 		path[k].p_idx->ei_block = border;
