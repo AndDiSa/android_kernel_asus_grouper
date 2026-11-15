@@ -447,7 +447,7 @@ static int snd_timer_start1(struct snd_timer_instance *timeri,
 	 * bail out as error if it's way too low (< 100us)
 	 */
 	if (start) {
-		if ((u64)snd_timer_hw_resolution(timer) * ticks < 100000) {
+		if ((u64)snd_timer_resolution(timeri) * ticks < 100000) {
 			result = -EINVAL;
 			goto unlock;
 		}
