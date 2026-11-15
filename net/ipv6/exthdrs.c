@@ -171,6 +171,8 @@ static int ip6_parse_tlv(struct tlvtype_proc *procs, struct sk_buff *skb)
 					   func(). */
 					if (curr->func(skb, off) == 0)
 						return 0;
+
+					nh = skb_network_header(skb);
 					break;
 				}
 			}
