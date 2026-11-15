@@ -835,6 +835,9 @@ static struct l2cap_chan *l2cap_sock_new_connection_cb(void *data)
 {
 	struct sock *sk, *parent = data;
 
+	if (!parent)
+		return NULL;
+
 	sk = l2cap_sock_alloc(sock_net(parent), NULL, BTPROTO_L2CAP,
 								GFP_ATOMIC);
 	if (!sk)
@@ -884,6 +887,9 @@ static void l2cap_sock_close_cb(void *data)
 static void l2cap_sock_state_change_cb(void *data, int state)
 {
 	struct sock *sk = data;
+
+	if (!sk)
+		return;
 
 	sk->sk_state = state;
 }

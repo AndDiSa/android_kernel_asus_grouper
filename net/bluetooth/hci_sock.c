@@ -122,18 +122,27 @@ void hci_send_to_sock(struct hci_dev *hdev, struct sk_buff *skb,
 			continue;
 
 		if (bt_cb(skb)->pkt_type == HCI_EVENT_PKT) {
-			register int evt = (*(__u8 *)skb->data & HCI_FLT_EVENT_BITS);
+			u8 event;
+			int evt;
+
+			if (skb->len < 1)
+				continue;
+
+			event = *(__u8 *)skb->data;
+			evt = event & HCI_FLT_EVENT_BITS;
 
 			if (!hci_test_bit(evt, &flt->event_mask))
 				continue;
 
 			if (flt->opcode &&
-			    ((evt == HCI_EV_CMD_COMPLETE &&
-			      flt->opcode !=
-			      get_unaligned((__le16 *)(skb->data + 3))) ||
-			     (evt == HCI_EV_CMD_STATUS &&
-			      flt->opcode !=
-			      get_unaligned((__le16 *)(skb->data + 4)))))
+			    ((event == HCI_EV_CMD_COMPLETE &&
+			      (skb->len < 5 ||
+			       flt->opcode !=
+			       get_unaligned((__le16 *)(skb->data + 3)))) ||
+			     (event == HCI_EV_CMD_STATUS &&
+			      (skb->len < 6 ||
+			       flt->opcode !=
+			       get_unaligned((__le16 *)(skb->data + 4))))))
 				continue;
 		}
 
@@ -513,7 +522,8 @@ static int hci_sock_sendmsg(struct kiocb *iocb, struct socket *sock,
 		u16 ocf = hci_opcode_ocf(opcode);
 
 		if (((ogf > HCI_SFLT_MAX_OGF) ||
-				!hci_test_bit(ocf & HCI_FLT_OCF_BITS, &hci_sec_filter.ocf_mask[ogf])) &&
+				(ocf > HCI_FLT_OCF_BITS) ||
+				!hci_test_bit(ocf, &hci_sec_filter.ocf_mask[ogf])) &&
 					!capable(CAP_NET_RAW)) {
 			err = -EPERM;
 			goto drop;

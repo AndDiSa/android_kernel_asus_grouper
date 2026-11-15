@@ -2824,7 +2824,8 @@ static inline int l2cap_information_rsp(struct l2cap_conn *conn, struct l2cap_cm
 	}
 
 	if (type == L2CAP_IT_FEAT_MASK) {
-		conn->feat_mask = get_unaligned_le32(rsp->data);
+		if (cmd_len >= sizeof(*rsp) + sizeof(u32))
+			conn->feat_mask = get_unaligned_le32(rsp->data);
 
 		if (conn->feat_mask & L2CAP_FEAT_FIXED_CHAN) {
 			struct l2cap_info_req req;
@@ -3967,6 +3968,10 @@ static void l2cap_recv_frame(struct l2cap_conn *conn, struct sk_buff *skb)
 		break;
 
 	case L2CAP_CID_CONN_LESS:
+		if (skb->len < 2) {
+			kfree_skb(skb);
+			break;
+		}
 		psm = get_unaligned_le16(skb->data);
 		skb_pull(skb, 2);
 		l2cap_conless_channel(conn, psm, skb);
