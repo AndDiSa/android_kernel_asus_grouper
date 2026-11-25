@@ -147,6 +147,41 @@ static inline struct l2cap_chan *l2cap_get_chan_by_ident(struct l2cap_conn *conn
 	return c;
 }
 
+/* Our connection request has been sent and is still outstanding */
+static bool l2cap_chan_connect_pending(struct l2cap_chan *chan)
+{
+	return chan->state == BT_CONNECT &&
+	       test_bit(CONF_CONNECT_PEND, &chan->conf_state);
+}
+
+/* Other channels may hold the same ident for a response they still have
+ * to send, so only look at channels waiting for a connection response.
+ */
+static struct l2cap_chan *__l2cap_get_connect_chan_by_ident(struct l2cap_conn *conn,
+							    u8 ident)
+{
+	struct l2cap_chan *c;
+
+	list_for_each_entry(c, &conn->chan_l, list) {
+		if (c->ident == ident && l2cap_chan_connect_pending(c))
+			return c;
+	}
+	return NULL;
+}
+
+static inline struct l2cap_chan *l2cap_get_connect_chan_by_ident(struct l2cap_conn *conn,
+								 u8 ident)
+{
+	struct l2cap_chan *c;
+
+	read_lock(&conn->chan_lock);
+	c = __l2cap_get_connect_chan_by_ident(conn, ident);
+	if (c)
+		bh_lock_sock(c->sk);
+	read_unlock(&conn->chan_lock);
+	return c;
+}
+
 static struct l2cap_chan *__l2cap_global_chan_by_addr(__le16 psm, bdaddr_t *src)
 {
 	struct l2cap_chan *c;
@@ -2450,12 +2485,19 @@ static inline int l2cap_connect_rsp(struct l2cap_conn *conn, struct l2cap_cmd_hd
 		if (!chan)
 			return -EFAULT;
 	} else {
-		chan = l2cap_get_chan_by_ident(conn, cmd->ident);
+		chan = l2cap_get_connect_chan_by_ident(conn, cmd->ident);
 		if (!chan)
 			return -EFAULT;
 	}
 
 	sk = chan->sk;
+
+	/* Only accept a response to a connection request we sent and that
+	 * is still outstanding. A channel waiting in BT_CONNECT for security
+	 * or the feature mask has not sent one yet.
+	 */
+	if (!l2cap_chan_connect_pending(chan))
+		goto done;
 
 	switch (result) {
 	case L2CAP_CR_SUCCESS:
@@ -2489,6 +2531,7 @@ static inline int l2cap_connect_rsp(struct l2cap_conn *conn, struct l2cap_cmd_hd
 		break;
 	}
 
+done:
 	bh_unlock_sock(sk);
 	return 0;
 }
@@ -2588,7 +2631,13 @@ static inline int l2cap_config_req(struct l2cap_conn *conn, struct l2cap_cmd_hdr
 		goto unlock;
 	}
 
-	if (!test_and_set_bit(CONF_REQ_SENT, &chan->conf_state)) {
+	/* A channel in BT_CONNECT2 has not passed security or userspace
+	 * accept yet. Answer the peer's request, but hold our own until
+	 * the channel reaches BT_CONFIG: the CONNECT2 -> CONFIG sites send
+	 * it. Connected channels may also need to reconfigure.
+	 */
+	if ((chan->state == BT_CONFIG || chan->state == BT_CONNECTED) &&
+	    !test_and_set_bit(CONF_REQ_SENT, &chan->conf_state)) {
 		u8 buf[64];
 		l2cap_send_cmd(conn, l2cap_get_ident(conn), L2CAP_CONF_REQ,
 					l2cap_build_conf_req(chan, buf), buf);
@@ -2620,6 +2669,10 @@ static inline int l2cap_config_rsp(struct l2cap_conn *conn, struct l2cap_cmd_hdr
 		return 0;
 
 	sk = chan->sk;
+
+	/* Connected channels may also receive reconfiguration responses. */
+	if (chan->state != BT_CONFIG && chan->state != BT_CONNECTED)
+		goto done;
 
 	switch (result) {
 	case L2CAP_CONF_SUCCESS:
@@ -2666,6 +2719,9 @@ static inline int l2cap_config_rsp(struct l2cap_conn *conn, struct l2cap_cmd_hdr
 
 	if (test_bit(CONF_OUTPUT_DONE, &chan->conf_state)) {
 		set_default_fcs(chan);
+
+		if (chan->state != BT_CONFIG)
+			goto done;
 
 		l2cap_state_change(chan, BT_CONNECTED);
 		chan->next_tx_seq = 0;

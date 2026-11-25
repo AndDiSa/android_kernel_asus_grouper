@@ -2663,6 +2663,13 @@ gotten:
 		if (!new_page)
 			goto oom;
 	} else {
+		/*
+		 * __copy_from_user_inatomic() only works as expected for local
+		 * faults. Reject remote COW faults on PFN mappings.
+		 */
+		if (unlikely(!old_page && mm != current->mm))
+			return VM_FAULT_SIGBUS;
+
 		new_page = alloc_page_vma(GFP_HIGHUSER_MOVABLE, vma, address);
 		if (!new_page)
 			goto oom;
